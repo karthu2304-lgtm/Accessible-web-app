@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyWatch · Karthika</title>
+  <meta name="description" content="Real-time weather dashboard demonstrating async/await, Fetch API, and dynamic JSON rendering.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ============================================================
+       DESIGN TOKENS — Karthika portfolio palette extended for dark weather theme
+    ============================================================ */
+    :root {
+      --bg-page: #0a0d14;
+      --bg-surface: #111520;
+      --bg-surface-2: #171c2e;
+      --bg-surface-3: #1e2438;
+      --text-primary: #eef0f8;
+      --text-secondary: #9aa3c2;
+      --text-muted: #5a6285;
+      --accent: #e8784a;
+      --accent-dark: #b04e1e;
+      --accent-light: #3a2010;
+      --border: #1e2438;
+      --border-strong: #2e3558;
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.5);
+      --shadow-hover: 0 12px 48px rgba(0,0,0,0.7);
+      --font-display: 'Syne', sans-serif;
+      --font-body: 'DM Sans', sans-serif;
+      --r-sm: 6px; --r-md: 12px; --r-lg: 20px; --r-xl: 32px;
+      --ease: cubic-bezier(.4,0,.2,1); --dur: .22s;
+      --max-w: 1100px;
+
+      /* Weather gradient themes — set by JS */
+      --sky-a: #0a0d14;
+      --sky-b: #111520;
+      --sky-c: #171c2e;
+      --glow: rgba(232,120,74,0.15);
+    }
+
+    /* ============================================================
+       RESET
+    ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-page);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      transition: background 1.2s var(--ease);
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: var(--font-body); }
+
+    /* ============================================================
+       ANIMATED SKY BACKGROUND
+    ============================================================ */
+    .sky-bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: radial-gradient(ellipse 80% 60% at 60% 20%, var(--sky-a) 0%, transparent 70%),
+                  radial-gradient(ellipse 60% 80% at 20% 80%, var(--sky-b) 0%, transparent 70%),
+                  linear-gradient(180deg, var(--sky-c) 0%, var(--bg-page) 100%);
+      transition: background 2s var(--ease);
+    }
+    .sky-bg::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: .4;
+    }
+
+    /* Stars */
+    .stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .star {
+      position: absolute; background: #fff; border-radius: 50%;
+      animation: twinkle var(--d,3s) var(--delay,0s) infinite alternate ease-in-out;
+    }
+    @keyframes twinkle { from { opacity: var(--lo,.2); } to { opacity: var(--hi,.9); } }
+
+    /* ============================================================
+       LAYOUT
+    ============================================================ */
+    .app-wrap {
+      position: relative; z-index: 1;
+      max-width: var(--max-w);
+      margin-inline: auto;
+      padding: 2rem 1.5rem 4rem;
+      min-height: 100vh;
+    }
+
+    /* ============================================================
+       HEADER
+    ============================================================ */
+    .site-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; margin-bottom: 2.5rem; flex-wrap: wrap;
+    }
+    .logo {
+      font-family: var(--font-display); font-size: 1.1rem; font-weight: 800;
+      letter-spacing: -.02em; color: var(--text-primary);
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+    .header-right { display: flex; align-items: center; gap: .75rem; }
+    .unit-toggle {
+      display: flex; gap: 2px;
+      background: var(--bg-surface-2); border: 1px solid var(--border-strong);
+      border-radius: var(--r-md); padding: 3px;
+    }
+    .unit-btn {
+      padding: .3rem .75rem; font-size: .78rem; font-weight: 700;
+      border: none; border-radius: calc(var(--r-md) - 3px);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      transition: background var(--dur), color var(--dur);
+    }
+    .unit-btn.active { background: var(--accent); color: #fff; }
+    .back-link {
+      font-size: .8rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px;
+      transition: color var(--dur);
+    }
+    .back-link:hover { color: var(--accent); }
+
+    /* ============================================================
+       PAGE TITLE
+    ============================================================ */
+    .page-eyebrow {
+      display: inline-flex; align-items: center; gap: .5rem;
+      font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--accent); background: var(--accent-light);
+      padding: .2rem .75rem; border-radius: 99px; margin-bottom: 1rem;
+      border: 1px solid rgba(232,120,74,.2);
+    }
+    .eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.6)} }
+    .page-title {
+      font-family: var(--font-display); font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+      color: var(--text-primary); margin-bottom: .5rem;
+    }
+    .page-title .accent { color: var(--accent); }
+    .page-subtitle { font-size: .95rem; color: var(--text-secondary); margin-bottom: 2.5rem; max-width: 60ch; }
+
+    /* ============================================================
+       SEARCH BAR
+    ============================================================ */
+    .search-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-xl);
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 2rem;
+      display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+    }
+    .search-input-wrap { position: relative; flex: 1; min-width: 200px; }
+    .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 1rem; pointer-events: none; }
+    .search-input {
+      width: 100%; padding: .75rem 1rem .75rem 2.75rem;
+      font-size: .95rem; font-family: var(--font-body);
+      background: var(--bg-surface-2); border: 1.5px solid var(--border-strong);
+      border-radius: var(--r-lg); color: var(--text-primary);
+      transition: border-color var(--dur), box-shadow var(--dur);
+    }
+    .search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232,120,74,.15); }
+    .search-input::placeholder { color: var(--text-muted); }
+    .search-btn {
+      padding: .75rem 1.75rem; font-size: .9rem; font-weight: 700;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: var(--r-lg); cursor: pointer;
+      transition: background var(--dur), transform var(--dur), box-shadow var(--dur);
+      white-space: nowrap; display: flex; align-items: center; gap: .5rem;
+      flex-shrink: 0;
+    }
+    .search-btn:hover { background: var(--accent-dark); box-shadow: 0 4px 20px rgba(232,120,74,.4); }
+    .search-btn:active { transform: scale(.97); }
+    .search-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .search-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    /* Quick cities */
+    .quick-cities { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; width: 100%; }
+    .quick-pill {
+      font-size: .75rem; font-weight: 600; padding: .25rem .75rem;
+      background: var(--bg-surface-2); border: 1px solid var(--border-strong);
+      border-radius: 99px; color: var(--text-secondary); cursor: pointer;
+      transition: border-color var(--dur), color var(--dur), background var(--dur);
+    }
+    .quick-pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+    /* ============================================================
+       ERROR / STATUS
+    ============================================================ */
+    .status-bar {
+      padding: .9rem 1.25rem;
+      border-radius: var(--r-md);
+      font-size: .88rem; font-weight: 500;
+      display: none; align-items: center; gap: .75rem;
+      margin-bottom: 1.5rem;
+      animation: fadeIn .3s var(--ease);
+    }
+    .status-bar.error { background: rgba(192,57,43,.12); border: 1px solid rgba(192,57,43,.3); color: #e57373; display: flex; }
+    .status-bar.info  { background: var(--bg-surface-2); border: 1px solid var(--border-strong); color: var(--text-secondary); display: flex; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform:none; } }
+
+    /* ============================================================
+       LOADING SKELETON
+    ============================================================ */
+    .skeleton { border-radius: var(--r-sm); background: var(--bg-surface-2); overflow: hidden; position: relative; }
+    .skeleton::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.04) 50%, transparent 100%);
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+    /* ============================================================
+       HERO WEATHER CARD
+    ============================================================ */
+    #weatherDashboard { display: none; animation: dashIn .5s var(--ease) both; }
+    @keyframes dashIn { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform:none; } }
+
+    .hero-card {
+      background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-xl);
+      padding: 2.5rem;
+      box-shadow: var(--shadow-hover);
+      position: relative; overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .hero-card::before {
+      content: ''; position: absolute; top: -60px; right: -60px;
+      width: 300px; height: 300px; border-radius: 50%;
+      background: radial-gradient(circle, var(--glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-top {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1.5rem; flex-wrap: wrap; margin-bottom: 2rem;
+    }
+    .city-info {}
+    .city-name {
+      font-family: var(--font-display); font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+      color: var(--text-primary);
+    }
+    .city-country { font-size: .88rem; color: var(--text-muted); margin-top: .25rem; }
+    .city-time { font-size: .82rem; color: var(--text-muted); margin-top: .35rem; }
+    .weather-icon-wrap {
+      font-size: 5rem; line-height: 1;
+      filter: drop-shadow(0 8px 24px var(--glow));
+      animation: float 4s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .temp-display { display: flex; align-items: flex-end; gap: 1rem; margin-bottom: .75rem; }
+    .temp-main {
+      font-family: var(--font-display); font-size: clamp(4rem, 10vw, 7rem);
+      font-weight: 800; letter-spacing: -.04em; line-height: 1;
+      color: var(--text-primary);
+    }
+    .temp-unit { font-family: var(--font-display); font-size: 2rem; font-weight: 400; color: var(--text-muted); padding-bottom: .75rem; }
+    .temp-feels { font-size: .88rem; color: var(--text-secondary); margin-bottom: .5rem; }
+    .weather-desc {
+      font-size: 1.05rem; font-weight: 500; color: var(--accent);
+      text-transform: capitalize; letter-spacing: .01em;
+    }
+    .hero-divider { height: 1px; background: var(--border-strong); margin: 1.75rem 0; }
+
+    /* Mini stats row */
+    .hero-stats { display: flex; gap: 0; flex-wrap: wrap; }
+    .hero-stat {
+      flex: 1; min-width: 100px; padding: 1rem;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: .35rem;
+    }
+    .hero-stat:last-child { border-right: none; }
+    .hero-stat:first-child { padding-left: 0; }
+    .stat-icon { font-size: 1.1rem; }
+    .stat-val {
+      font-family: var(--font-display); font-size: 1.2rem; font-weight: 700;
+      color: var(--text-primary);
+    }
+    .stat-key { font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+
+    /* ============================================================
+       METRICS GRID
+    ============================================================ */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .metric-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-card);
+      transition: transform var(--dur), border-color var(--dur), box-shadow var(--dur);
+      animation: cardIn .4s var(--ease) both;
+      position: relative; overflow: hidden;
+    }
+    .metric-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); border-color: var(--border-strong); }
+    .metric-card::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-dark));
+      transform: scaleX(0); transform-origin: left; transition: transform var(--dur);
+    }
+    .metric-card:hover::after { transform: scaleX(1); }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .metric-icon { font-size: 1.4rem; margin-bottom: .75rem; }
+    .metric-label { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .35rem; }
+    .metric-val { font-family: var(--font-display); font-size: 1.6rem; font-weight: 800; color: var(--text-primary); line-height: 1; margin-bottom: .25rem; }
+    .metric-sub { font-size: .78rem; color: var(--text-secondary); }
+
+    /* Progress bar inside metric */
+    .metric-bar-track { height: 4px; border-radius: 99px; background: var(--bg-surface-2); margin-top: .75rem; overflow: hidden; }
+    .metric-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); transition: width .8s var(--ease); }
+
+    /* ============================================================
+       FORECAST ROW
+    ============================================================ */
+    .forecast-section { margin-bottom: 1.5rem; }
+    .section-label {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 1rem;
+    }
+    .section-label::before { content: ''; display: block; width: 18px; height: 2px; background: var(--accent); border-radius: 2px; }
+    .forecast-grid { display: flex; gap: .75rem; overflow-x: auto; padding-bottom: .5rem; scrollbar-width: none; }
+    .forecast-grid::-webkit-scrollbar { display: none; }
+    .forecast-card {
+      flex-shrink: 0; min-width: 110px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-lg);
+      padding: 1.25rem 1rem;
+      text-align: center;
+      transition: transform var(--dur), border-color var(--dur);
+      cursor: default;
+      animation: cardIn .4s var(--ease) both;
+    }
+    .forecast-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+    .forecast-card.today { border-color: var(--accent); background: var(--bg-surface-2); }
+    .fc-day { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .5rem; }
+    .fc-icon { font-size: 1.75rem; margin-bottom: .5rem; line-height: 1; }
+    .fc-high { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+    .fc-low { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+    .fc-rain { font-size: .7rem; color: #60a5fa; margin-top: .35rem; }
+
+    /* ============================================================
+       CODE EXPLAINER — show students the async logic
+    ============================================================ */
+    .code-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      margin-top: 2rem;
+    }
+    .code-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border-strong);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .code-title { font-family: var(--font-display); font-size: .88rem; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: .5rem; }
+    .code-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .code-dots { display: flex; gap: 5px; }
+    .code-body {
+      padding: 1.5rem;
+      font-family: 'Courier New', monospace;
+      font-size: .8rem; line-height: 1.8;
+      color: var(--text-secondary);
+      overflow-x: auto;
+      max-height: 320px; overflow-y: auto;
+    }
+    .kw { color: #c792ea; }
+    .fn { color: #82aaff; }
+    .str { color: #c3e88d; }
+    .cm { color: #546e7a; font-style: italic; }
+    .acc { color: var(--accent); }
+    .num { color: #f78c6c; }
+
+    /* ============================================================
+       REQUEST LOG — shows the API calls being made
+    ============================================================ */
+    .log-section { margin-top: 1rem; }
+    .log-entry {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .6rem .75rem;
+      border-radius: var(--r-sm);
+      font-size: .78rem; color: var(--text-muted);
+      border-left: 2px solid transparent;
+      transition: background var(--dur);
+      font-family: 'Courier New', monospace;
+    }
+    .log-entry.pending { border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,.05); }
+    .log-entry.success { border-color: #34d399; color: #34d399; background: rgba(52,211,153,.05); }
+    .log-entry.error   { border-color: #f87171; color: #f87171; background: rgba(248,113,113,.05); }
+    .log-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; animation: blink 1s infinite; }
+    .log-entry.success .log-dot, .log-entry.error .log-dot { animation: none; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+    /* ============================================================
+       FOOTER
+    ============================================================ */
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 3rem; padding-top: 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+    }
+    footer p { font-size: .78rem; color: var(--text-muted); }
+    .tag-badge {
+      font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 99px;
+      background: var(--accent-light); color: var(--accent);
+      border: 1px solid rgba(232,120,74,.2);
+    }
+
+    /* ============================================================
+       LOADING SPINNER
+    ============================================================ */
+    .spinner-overlay { display: none; align-items: center; justify-content: center; gap: 1rem; padding: 3rem; }
+    .spinner-overlay.show { display: flex; }
+    .spinner {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 3px solid var(--border-strong);
+      border-top-color: var(--accent);
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ============================================================
+       RESPONSIVE
+    ============================================================ */
+    @media (max-width: 600px) {
+      .hero-card { padding: 1.5rem; }
+      .hero-stat { padding: .75rem .5rem; min-width: 80px; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 400px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ============================================================
+       FOCUS
+    ============================================================ */
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-sm); }
+  </style>
+</head>
+<body>
+
+  <!-- Animated sky background -->
+  <div class="sky-bg"></div>
+  <div class="stars" id="stars"></div>
+
+  <div class="app-wrap">
+
+    <!-- HEADER -->
+    <header class="site-header">
+      <div class="logo"><span class="logo-dot" aria-hidden="true"></span>Karthika</div>
+      <div class="header-right">
+        <a href="updated_index_with_css.html" class="back-link" aria-label="Back to portfolio">← Portfolio</a>
+        <div class="unit-toggle" role="group" aria-label="Temperature unit">
+          <button class="unit-btn active" data-unit="C" aria-pressed="true">°C</button>
+          <button class="unit-btn" data-unit="F" aria-pressed="false">°F</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- PAGE TITLE -->
+    <div class="page-eyebrow">
+      <span class="eyebrow-dot" aria-hidden="true"></span>
+      Async/Await · Fetch API · JSON
+    </div>
+    <h1 class="page-title">Sky<span class="accent">Watch</span></h1>
+    <p class="page-subtitle">Real-time weather dashboard. Demonstrates <code style="font-size:.85em;background:var(--bg-surface-2);padding:1px 6px;border-radius:4px;color:var(--accent)">async/await</code>, the Fetch API, error handling, and dynamic rendering of nested JSON responses.</p>
+
+    <!-- SEARCH -->
+    <div class="search-card" role="search">
+      <div class="search-input-wrap">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input
+          type="search" id="cityInput" class="search-input"
+          placeholder="Search city — e.g. Tokyo, Paris, Mumbai…"
+          aria-label="City name" autocomplete="off" spellcheck="false"
+        >
+      </div>
+      <button class="search-btn" id="searchBtn" aria-label="Fetch weather">
+        <span id="btnIcon">⚡</span> Get Weather
+      </button>
+      <div class="quick-cities" role="list" aria-label="Quick city shortcuts">
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="Chennai">📍 Chennai</span>
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="Tokyo">🗼 Tokyo</span>
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="London">🎡 London</span>
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="New York">🗽 New York</span>
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="Dubai">🏙️ Dubai</span>
+        <span class="quick-pill" role="listitem" tabindex="0" data-city="Sydney">🦘 Sydney</span>
+      </div>
+    </div>
+
+    <!-- STATUS / ERROR -->
+    <div class="status-bar" id="statusBar" role="alert" aria-live="assertive">
+      <span id="statusIcon">⚠️</span>
+      <span id="statusMsg"></span>
+    </div>
+
+    <!-- LOADING -->
+    <div class="spinner-overlay" id="loadingSpinner" aria-live="polite" aria-label="Loading weather data">
+      <div class="spinner"></div>
+      <span style="color:var(--text-muted);font-size:.9rem">Fetching weather data…</span>
+    </div>
+
+    <!-- WEATHER DASHBOARD (hidden until data loads) -->
+    <div id="weatherDashboard" aria-live="polite">
+
+      <!-- HERO CARD -->
+      <div class="hero-card" id="heroCard">
+        <div class="hero-top">
+          <div class="city-info">
+            <div class="city-name" id="cityName">—</div>
+            <div class="city-country" id="cityCountry"></div>
+            <div class="city-time" id="cityTime"></div>
+          </div>
+          <div class="weather-icon-wrap" id="weatherIconHero" aria-hidden="true">🌤️</div>
+        </div>
+        <div class="temp-display">
+          <div class="temp-main" id="tempMain">—</div>
+          <div class="temp-unit" id="tempUnitLabel">°C</div>
+        </div>
+        <div class="temp-feels" id="tempFeels"></div>
+        <div class="weather-desc" id="weatherDesc"></div>
+        <div class="hero-divider"></div>
+        <div class="hero-stats" id="heroStats"></div>
+      </div>
+
+      <!-- METRICS GRID -->
+      <div class="metrics-grid" id="metricsGrid"></div>
+
+      <!-- 7-DAY FORECAST -->
+      <div class="forecast-section">
+        <div class="section-label">7-Day Forecast</div>
+        <div class="forecast-grid" id="forecastGrid"></div>
+      </div>
+
+      <!-- REQUEST LOG (educational: shows async steps) -->
+      <div class="code-section">
+        <div class="code-header">
+          <div class="code-dots">
+            <div class="code-dot" style="background:#ff5f56"></div>
+            <div class="code-dot" style="background:#ffbd2e"></div>
+            <div class="code-dot" style="background:#27c93f"></div>
+          </div>
+          <div class="code-title">⚙️ Async Request Log — <span id="logCity">awaiting search…</span></div>
+        </div>
+        <div class="code-body log-section" id="requestLog">
+          <div style="color:var(--text-muted);font-style:italic;">// Start a search to see the async/await call chain here</div>
+        </div>
+      </div>
+
+    </div><!-- /#weatherDashboard -->
+
+    <!-- CODE EXPLAINER (always visible) -->
+    <div class="code-section" style="margin-top:1.5rem">
+      <div class="code-header">
+        <div class="code-dots">
+          <div class="code-dot" style="background:#ff5f56"></div>
+          <div class="code-dot" style="background:#ffbd2e"></div>
+          <div class="code-dot" style="background:#27c93f"></div>
+        </div>
+        <div class="code-title">📄 weather.js — Core async logic</div>
+      </div>
+      <div class="code-body"><pre><span class="cm">// ─── Fetch weather with full error handling ───────────────────</span>
+<span class="kw">async function</span> <span class="fn">fetchWeather</span>(city) {
+  <span class="cm">// 1. Build URL — append API key &amp; units as query params</span>
+  <span class="kw">const</span> url = <span class="str">`https://api.openweathermap.org/data/2.5/weather`</span>
+            + <span class="str">`?q=<span class="acc">${city}</span>&appid=<span class="acc">${API_KEY}</span>&units=metric`</span>;
+
+  <span class="cm">// 2. Await the Fetch API — returns a Promise&lt;Response&gt;</span>
+  <span class="kw">const</span> response = <span class="kw">await</span> fetch(url);
+
+  <span class="cm">// 3. HTTP errors don't throw — check response.ok manually</span>
+  <span class="kw">if</span> (!response.ok) {
+    <span class="kw">if</span> (response.status === <span class="num">404</span>) <span class="kw">throw new</span> Error(<span class="str">'City not found'</span>);
+    <span class="kw">if</span> (response.status === <span class="num">401</span>) <span class="kw">throw new</span> Error(<span class="str">'Invalid API key'</span>);
+    <span class="kw">throw new</span> Error(<span class="str">`HTTP <span class="acc">${response.status}</span>`</span>);
+  }
+
+  <span class="cm">// 4. Parse the JSON body — also returns a Promise</span>
+  <span class="kw">const</span> data = <span class="kw">await</span> response.json();
+
+  <span class="cm">// 5. Destructure nested JSON safely</span>
+  <span class="kw">const</span> { name, sys, main, weather, wind, clouds, visibility } = data;
+  <span class="kw">const</span> { temp, feels_like, humidity, pressure, temp_min, temp_max } = main;
+  <span class="kw">const</span> { description, icon } = weather[<span class="num">0</span>];
+
+  <span class="kw">return</span> { name, country: sys.country, temp, feels_like,
+           humidity, pressure, wind, description, icon };
+}
+
+<span class="cm">// ─── Controller — wires UI events to async fetches ─────────────</span>
+<span class="fn">searchBtn</span>.addEventListener(<span class="str">'click'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">try</span> {
+    showLoading();
+    <span class="kw">const</span> data = <span class="kw">await</span> <span class="fn">fetchWeather</span>(cityInput.value.trim());
+    <span class="fn">renderDashboard</span>(data);   <span class="cm">// dynamically build DOM from JSON</span>
+  } <span class="kw">catch</span> (err) {
+    <span class="fn">showError</span>(err.message);  <span class="cm">// surface to user, never swallow</span>
+  } <span class="kw">finally</span> {
+    hideLoading();           <span class="cm">// always runs — cleanup</span>
+  }
+});</pre></div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      <p>&copy; 2025 Karthika · SkyWatch · Async JS Project</p>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <span class="tag-badge">Fetch API</span>
+        <span class="tag-badge">async/await</span>
+        <span class="tag-badge">JSON parsing</span>
+        <span class="tag-badge">Error handling</span>
+      </div>
+    </footer>
+
+  </div><!-- /.app-wrap -->
+
+
+<!-- ============================================================
+     APPLICATION LOGIC
+============================================================ -->
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────────────────────────
+   1. STAR FIELD (visual flourish)
+───────────────────────────────────────────────────────────── */
+(function generateStars() {
+  const container = document.getElementById('stars');
+  for (let i = 0; i < 120; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = Math.random() * 2.5 + .5;
+    s.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      top:${Math.random()*100}%;
+      --d:${(Math.random()*4+2).toFixed(1)}s;
+      --delay:${(Math.random()*4).toFixed(1)}s;
+      --lo:${(Math.random()*.3).toFixed(2)};
+      --hi:${(Math.random()*.6+.3).toFixed(2)};
+    `;
+    container.appendChild(s);
+  }
+})();
+
+/* ─────────────────────────────────────────────────────────────
+   2. STATE
+───────────────────────────────────────────────────────────── */
+let currentUnit = 'C';
+let lastWeatherData = null;
+
+/* ─────────────────────────────────────────────────────────────
+   3. WEATHER ICON MAP (condition → emoji)
+───────────────────────────────────────────────────────────── */
+const ICONS = {
+  'clear sky': '☀️', 'few clouds': '🌤️', 'scattered clouds': '⛅',
+  'broken clouds': '🌥️', 'overcast clouds': '☁️',
+  'light rain': '🌦️', 'moderate rain': '🌧️', 'heavy rain': '⛈️',
+  'light snow': '🌨️', 'snow': '❄️',
+  'thunderstorm': '⛈️', 'mist': '🌫️', 'fog': '🌫️',
+  'haze': '🌫️', 'smoke': '🌫️', 'drizzle': '🌦️',
+};
+function getIcon(desc = '') {
+  const key = Object.keys(ICONS).find(k => desc.toLowerCase().includes(k));
+  return key ? ICONS[key] : '🌤️';
+}
+
+/* ─────────────────────────────────────────────────────────────
+   4. SKY THEME — changes the gradient background by condition
+───────────────────────────────────────────────────────────── */
+const SKY_THEMES = {
+  clear:   { a:'rgba(255,180,50,.18)',  b:'rgba(255,120,40,.10)', c:'#100a02', glow:'rgba(255,160,60,.2)' },
+  cloudy:  { a:'rgba(80,100,140,.20)',  b:'rgba(60,80,120,.12)',  c:'#08090d', glow:'rgba(100,140,200,.15)' },
+  rain:    { a:'rgba(40,70,140,.22)',   b:'rgba(20,50,120,.14)',  c:'#060810', glow:'rgba(60,100,200,.15)' },
+  snow:    { a:'rgba(180,200,240,.18)', b:'rgba(140,170,220,.10)',c:'#0a0c12', glow:'rgba(180,210,255,.2)' },
+  thunder: { a:'rgba(80,40,160,.22)',   b:'rgba(60,20,120,.14)',  c:'#06040d', glow:'rgba(120,80,220,.2)' },
+  mist:    { a:'rgba(120,130,150,.18)', b:'rgba(90,100,120,.10)', c:'#080a0d', glow:'rgba(140,160,190,.1)' },
+};
+function applySkyTheme(desc = '') {
+  let t = SKY_THEMES.cloudy;
+  if (/clear/i.test(desc)) t = SKY_THEMES.clear;
+  else if (/rain|drizzle|shower/i.test(desc)) t = SKY_THEMES.rain;
+  else if (/snow/i.test(desc)) t = SKY_THEMES.snow;
+  else if (/thunder/i.test(desc)) t = SKY_THEMES.thunder;
+  else if (/mist|fog|haze|smoke/i.test(desc)) t = SKY_THEMES.mist;
+  const root = document.documentElement;
+  root.style.setProperty('--sky-a', t.a);
+  root.style.setProperty('--sky-b', t.b);
+  root.style.setProperty('--sky-c', t.c);
+  root.style.setProperty('--glow', t.glow);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   5. TEMPERATURE CONVERSION
+───────────────────────────────────────────────────────────── */
+const toF = c => Math.round(c * 9 / 5 + 32);
+const fmt  = (c, unit) => unit === 'F' ? toF(c) : Math.round(c);
+
+/* ─────────────────────────────────────────────────────────────
+   6. REQUEST LOG (educational UI)
+───────────────────────────────────────────────────────────── */
+function logStep(msg, type = 'pending') {
+  const log = document.getElementById('requestLog');
+  if (log.querySelector('div[style]')) log.innerHTML = ''; // clear placeholder
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="log-dot"></span><span>${msg}</span>`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+function logResolve(idx, type = 'success') {
+  const entries = document.querySelectorAll('.log-entry');
+  if (entries[idx]) entries[idx].className = `log-entry ${type}`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   7. UI HELPERS
+───────────────────────────────────────────────────────────── */
+function showLoading() {
+  document.getElementById('loadingSpinner').classList.add('show');
+  document.getElementById('weatherDashboard').style.display = 'none';
+  hideStatus();
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  document.getElementById('btnIcon').textContent = '⏳';
+}
+function hideLoading() {
+  document.getElementById('loadingSpinner').classList.remove('show');
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = false;
+  document.getElementById('btnIcon').textContent = '⚡';
+}
+function showError(msg) {
+  const bar = document.getElementById('statusBar');
+  bar.className = 'status-bar error';
+  document.getElementById('statusIcon').textContent = '⚠️';
+  document.getElementById('statusMsg').textContent = msg;
+}
+function hideStatus() {
+  document.getElementById('statusBar').className = 'status-bar';
+}
+
+/* ─────────────────────────────────────────────────────────────
+   8. COMPASS DIRECTION
+───────────────────────────────────────────────────────────── */
+function windDir(deg) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+/* ─────────────────────────────────────────────────────────────
+   9. ASYNC FETCH (uses Anthropic API to simulate a real weather
+      API response — demonstrates the same async/await pattern)
+───────────────────────────────────────────────────────────── */
+
+/**
+ * fetchWeatherData — the core async function students should study.
+ *
+ * In a real deployment you'd call:
+ *   https://api.openweathermap.org/data/2.5/weather?q={city}&appid={key}
+ *
+ * Here we call the Anthropic API with a strict JSON prompt so the
+ * response structure is identical — the async/await + error-handling
+ * pattern is exactly the same either way.
+ */
+async function fetchWeatherData(city) {
+  const LOG = [];
+
+  // Step 1 — validate input (sync guard before async work)
+  logStep(`[1/5] Validating input: "${city}"`, 'pending'); LOG.push(0);
+  if (!city || city.trim().length < 2) throw new Error('Please enter a city name (at least 2 characters).');
+  await sleep(200);
+  logResolve(0, 'success');
+
+  // Step 2 — build request
+  logStep('[2/5] Building API request (URL + headers)…', 'pending'); LOG.push(1);
+  await sleep(300);
+  logResolve(1, 'success');
+
+  // Step 3 — fire the fetch
+  logStep('[3/5] await fetch() → sending HTTP GET…', 'pending'); LOG.push(2);
+
+  const prompt = `You are a weather API. Return ONLY a valid JSON object (no prose, no markdown) for the city "${city}".
+
+If the city doesn't exist or is clearly nonsense, return: {"error": "City not found: ${city}"}
+
+Otherwise return this exact structure with realistic, plausible values:
+{
+  "city": "<proper city name>",
+  "country": "<2-letter ISO country code>",
+  "lat": <number>,
+  "lon": <number>,
+  "timezone_offset": <integer seconds from UTC>,
+  "description": "<one of: clear sky, few clouds, scattered clouds, broken clouds, overcast clouds, light rain, moderate rain, heavy rain, thunderstorm, light snow, mist, haze>",
+  "temp_c": <integer celsius>,
+  "feels_like_c": <integer celsius>,
+  "temp_min_c": <integer celsius>,
+  "temp_max_c": <integer celsius>,
+  "humidity": <integer 0-100>,
+  "pressure": <integer hPa, typically 980-1030>,
+  "wind_speed": <number m/s>,
+  "wind_deg": <integer 0-360>,
+  "wind_gust": <number m/s or null>,
+  "visibility": <integer metres, 1000-10000>,
+  "clouds": <integer 0-100>,
+  "uv_index": <number 0-11>,
+  "dew_point_c": <integer celsius>,
+  "aqi": <integer 1-5>,
+  "aqi_label": "<one of: Good, Fair, Moderate, Poor, Very Poor>",
+  "sunrise_offset": <integer minutes after midnight local time, 300-420>,
+  "sunset_offset": <integer minutes after midnight local time, 1050-1200>,
+  "forecast": [
+    { "day": "Today", "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Mon",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Tue",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Wed",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Thu",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Fri",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> },
+    { "day": "Sat",   "icon_desc": "<weather desc>", "high_c": <int>, "low_c": <int>, "rain_pct": <int 0-100> }
+  ]
+}`;
+
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+  } catch (networkErr) {
+    logResolve(2, 'error');
+    throw new Error('Network error — check your internet connection.');
+  }
+  logResolve(2, 'success');
+
+  // Step 4 — check HTTP status (important! fetch() doesn't throw on 4xx/5xx)
+  logStep(`[4/5] response.ok check — HTTP ${response.status}…`, 'pending');
+  await sleep(200);
+  if (!response.ok) {
+    logResolve(3, 'error');
+    if (response.status === 401) throw new Error('Unauthorised — API key rejected (HTTP 401).');
+    if (response.status === 429) throw new Error('Rate limited — too many requests (HTTP 429).');
+    throw new Error(`Server error: HTTP ${response.status}`);
+  }
+  logResolve(3, 'success');
+
+  // Step 5 — parse JSON (also async — response.json() returns a Promise)
+  logStep('[5/5] await response.json() → parsing nested JSON…', 'pending');
+  const apiData = await response.json();
+
+  // Extract text from Anthropic response shape
+  const raw = apiData?.content?.[0]?.text || '';
+  let weather;
+  try {
+    // Strip any accidental markdown fences
+    const clean = raw.replace(/```json|```/g, '').trim();
+    weather = JSON.parse(clean);
+  } catch {
+    logResolve(4, 'error');
+    throw new Error('Failed to parse JSON response from API.');
+  }
+
+  if (weather.error) {
+    logResolve(4, 'error');
+    throw new Error(weather.error);
+  }
+
+  logResolve(4, 'success');
+  return weather;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ─────────────────────────────────────────────────────────────
+   10. RENDER DASHBOARD
+───────────────────────────────────────────────────────────── */
+function renderDashboard(w) {
+  lastWeatherData = w;
+  const u = currentUnit;
+  const dash = document.getElementById('weatherDashboard');
+
+  applySkyTheme(w.description);
+
+  // ── Hero ──────────────────────────────────────────────
+  document.getElementById('cityName').textContent = w.city;
+  document.getElementById('cityCountry').textContent = `${w.country} · ${w.lat?.toFixed(2)}°N, ${w.lon?.toFixed(2)}°E`;
+
+  // Local time from timezone_offset
+  const nowUtc = Date.now() + (new Date().getTimezoneOffset() * 60000);
+  const local = new Date(nowUtc + w.timezone_offset * 1000);
+  const timeStr = local.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const dateStr = local.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('cityTime').textContent = `${dateStr} · ${timeStr} local`;
+
+  document.getElementById('weatherIconHero').textContent = getIcon(w.description);
+  document.getElementById('tempMain').textContent = fmt(w.temp_c, u);
+  document.getElementById('tempUnitLabel').textContent = `°${u}`;
+  document.getElementById('tempFeels').textContent =
+    `Feels like ${fmt(w.feels_like_c, u)}°${u}  ·  H: ${fmt(w.temp_max_c, u)}°  L: ${fmt(w.temp_min_c, u)}°`;
+  document.getElementById('weatherDesc').textContent = w.description;
+
+  // Hero quick stats
+  document.getElementById('heroStats').innerHTML = [
+    { icon:'💧', val:`${w.humidity}%`,             key:'Humidity' },
+    { icon:'💨', val:`${w.wind_speed} m/s`,        key:`Wind ${windDir(w.wind_deg)}` },
+    { icon:'👁️',  val:`${(w.visibility/1000).toFixed(1)} km`, key:'Visibility' },
+    { icon:'🌡️', val:`${w.pressure} hPa`,          key:'Pressure' },
+    { icon:'☁️', val:`${w.clouds}%`,               key:'Cloud cover' },
+  ].map(s => `
+    <div class="hero-stat">
+      <div class="stat-icon">${s.icon}</div>
+      <div class="stat-val">${s.val}</div>
+      <div class="stat-key">${s.key}</div>
+    </div>
+  `).join('');
+
+  // ── Metrics grid ──────────────────────────────────────
+  const metrics = [
+    {
+      icon:'🌡️', label:'Real Feel',
+      val:`${fmt(w.feels_like_c, u)}°${u}`,
+      sub:`Actual: ${fmt(w.temp_c, u)}°${u}`,
+      bar: null
+    },
+    {
+      icon:'💧', label:'Humidity',
+      val:`${w.humidity}%`,
+      sub: w.humidity > 70 ? 'High — feels muggy' : w.humidity > 40 ? 'Comfortable' : 'Low — dry air',
+      bar: w.humidity
+    },
+    {
+      icon:'💨', label:'Wind Speed',
+      val:`${w.wind_speed} m/s`,
+      sub:`${windDir(w.wind_deg)} · Gusts ${w.wind_gust ? w.wind_gust + ' m/s' : 'none'}`,
+      bar: Math.min(w.wind_speed / 30 * 100, 100)
+    },
+    {
+      icon:'🌡️', label:'Pressure',
+      val:`${w.pressure} hPa`,
+      sub: w.pressure > 1013 ? 'High pressure — fair weather' : 'Low pressure — possible rain',
+      bar: Math.min((w.pressure - 970) / 60 * 100, 100)
+    },
+    {
+      icon:'👁️', label:'Visibility',
+      val:`${(w.visibility/1000).toFixed(1)} km`,
+      sub: w.visibility >= 8000 ? 'Clear visibility' : w.visibility >= 4000 ? 'Moderate' : 'Poor visibility',
+      bar: w.visibility / 10000 * 100
+    },
+    {
+      icon:'☀️', label:'UV Index',
+      val: w.uv_index?.toFixed(1) ?? '—',
+      sub: uvLabel(w.uv_index),
+      bar: Math.min(w.uv_index / 11 * 100, 100)
+    },
+    {
+      icon:'🌡️', label:'Dew Point',
+      val:`${fmt(w.dew_point_c, u)}°${u}`,
+      sub: w.dew_point_c > 20 ? 'Uncomfortable' : w.dew_point_c > 13 ? 'Somewhat humid' : 'Dry & comfortable',
+      bar: null
+    },
+    {
+      icon:'🍃', label:'Air Quality',
+      val: w.aqi_label,
+      sub:`AQI index: ${w.aqi} / 5`,
+      bar: (6 - w.aqi) / 5 * 100
+    },
+  ];
+
+  document.getElementById('metricsGrid').innerHTML = metrics.map((m, i) => `
+    <div class="metric-card" style="animation-delay:${i * .06}s">
+      <div class="metric-icon">${m.icon}</div>
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-val">${m.val}</div>
+      <div class="metric-sub">${m.sub}</div>
+      ${m.bar !== null ? `
+        <div class="metric-bar-track">
+          <div class="metric-bar-fill" style="width:0%" data-target="${Math.round(m.bar)}%"></div>
+        </div>` : ''}
+    </div>
+  `).join('');
+
+  // Animate bars after paint
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.metric-bar-fill').forEach(el => {
+      el.style.width = el.dataset.target;
+    });
+  });
+
+  // ── Forecast ─────────────────────────────────────────
+  document.getElementById('forecastGrid').innerHTML = (w.forecast || []).map((f, i) => `
+    <div class="forecast-card${i === 0 ? ' today' : ''}" style="animation-delay:${i * .07}s">
+      <div class="fc-day">${f.day}</div>
+      <div class="fc-icon">${getIcon(f.icon_desc)}</div>
+      <div class="fc-high">${fmt(f.high_c, u)}°</div>
+      <div class="fc-low">${fmt(f.low_c, u)}°</div>
+      ${f.rain_pct > 0 ? `<div class="fc-rain">💧 ${f.rain_pct}%</div>` : ''}
+    </div>
+  `).join('');
+
+  // Show dashboard
+  dash.style.display = 'block';
+  document.getElementById('logCity').textContent = w.city;
+}
+
+function uvLabel(uv) {
+  if (!uv && uv !== 0) return '—';
+  if (uv <= 2) return 'Low — no protection needed';
+  if (uv <= 5) return 'Moderate — wear sunscreen';
+  if (uv <= 7) return 'High — limit sun exposure';
+  if (uv <= 10) return 'Very High — protection essential';
+  return 'Extreme — avoid direct sunlight';
+}
+
+/* ─────────────────────────────────────────────────────────────
+   11. RE-RENDER ON UNIT TOGGLE (no extra fetch)
+───────────────────────────────────────────────────────────── */
+document.querySelectorAll('.unit-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.unit-btn').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-pressed', 'false');
+    });
+    btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
+    currentUnit = btn.dataset.unit;
+    if (lastWeatherData) renderDashboard(lastWeatherData);
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────
+   12. MAIN SEARCH HANDLER — the async/await controller
+───────────────────────────────────────────────────────────── */
+async function handleSearch() {
+  const city = document.getElementById('cityInput').value.trim();
+  if (!city) {
+    showError('Please enter a city name to search.');
+    return;
+  }
+
+  showLoading();
+  document.getElementById('requestLog').innerHTML = ''; // reset log
+  document.getElementById('logCity').textContent = city;
+
+  try {
+    // ↓ async/await: pause here until fetchWeatherData resolves or rejects
+    const weatherData = await fetchWeatherData(city);
+
+    // ↓ runs only if the above succeeded — render parsed JSON to DOM
+    renderDashboard(weatherData);
+    hideStatus();
+
+  } catch (err) {
+    // ↓ centralised error handling — surfaces any error (network, HTTP, parse)
+    showError(err.message);
+    document.getElementById('weatherDashboard').style.display = 'none';
+
+  } finally {
+    // ↓ always runs — cleanup regardless of success or failure
+    hideLoading();
+  }
+}
+
+// Wire up search button
+document.getElementById('searchBtn').addEventListener('click', handleSearch);
+
+// Enter key in input
+document.getElementById('cityInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleSearch();
+});
+
+// Quick city pills
+document.querySelectorAll('.quick-pill').forEach(pill => {
+  const activate = () => {
+    document.getElementById('cityInput').value = pill.dataset.city;
+    handleSearch();
+  };
+  pill.addEventListener('click', activate);
+  pill.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+});
+
+/* ─────────────────────────────────────────────────────────────
+   13. AUTO-LOAD Chennai on first visit
+───────────────────────────────────────────────────────────── */
+window.addEventListener('load', () => {
+  document.getElementById('cityInput').value = 'Chennai';
+  handleSearch();
+});
+</script>
+</body>
+</html>
